@@ -1,0 +1,145 @@
+---
+title: "Exploratory Data Analysis on Crime in Austin, Texas"
+author: "Maya Joiner"
+date: "2022-12-22"
+output:
+  html_document: default
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r package}
+library(tidyverse)
+```
+
+## Introduction
+
+In this notebook, I will analyze different aspects of data on crime in Austin, Texas. To get the csv files I import in this notebook, I used BigQuery (SQL) to filter/group data/make new columns. Here are the code snippets I used to make the dataframes:
+
+#### 1) Analyzing incident distribution by district
+
+SELECT district, COUNT(unique_key) AS number_crimes FROM `bigquery-public-data.austin_crime.crime` 
+GROUP BY district;
+
+#### 2) Type of incident by district
+
+SELECT district, latitude, longitude, primary_type FROM `bigquery-public-data.austin_crime.crime` 
+WHERE latitude IS NOT NULL;
+
+#### 3) How long it took for a case to be cleared by district
+
+SELECT district, EXTRACT(HOUR from clearance_date-timestamp) AS difference_hours, timestamp, clearance_date FROM `bigquery-public-data.austin_crime.crime`
+
+#### 4) Incident count over time by district
+
+SELECT district, EXTRACT(YEAR from timestamp) AS crime_year, COUNT(unique_key) AS number_crimes FROM `bigquery-public-data.austin_crime.crime`
+GROUP BY district, crime_year
+ORDER BY district, crime_year;
+
+## Part 1: Analyzing incident distribution by district
+
+```{r}
+df1 = read.csv("crime_counts_by_district.csv")
+df1
+```
+
+
+```{r, echo=FALSE}
+#barplot(df1, main="Number of Crimes For Each District")
+ggplot(data = df1, mapping=aes(x = district, y = number_crimes) ) + geom_col()
+```
+
+
+We can see that 88, AP, and UK have a very low number of crimes, followed by C and G. The other districts have about the same number of crimes, D being the highest.
+
+## Part 2: Type of incident by district
+
+```{r}
+df2 = read.csv("latlong.csv")
+head(df2)
+```
+```{r}
+ggplot(data = df2, mapping=aes(x = latitude, y = longitude, color=district) ) + geom_point() 
+```
+```{r}
+ggplot(data = df2, mapping=aes(x = latitude, y = longitude, color=primary_type) ) + geom_point() 
+```
+
+
+Although it seems like all districts have a lot of burgulary/BOV theft, we are not 100% sure because of overplotting. To resolve this, we could jitter the data or make the points smaller/have a different shape. However, since I think this graph will still be overplot even when jittered and the points are already small, I will focus on one district of the map.
+
+
+```{r}
+ggplot(data = df2[df2$district == "I", ], mapping=aes(x = latitude, y = longitude, color=primary_type) ) + geom_point() 
+```
+
+At least for district I, theft/burglary are the most common crimes.
+
+## Part 3: How long it took for a case to be cleared by district
+```{r}
+df3 = read.csv("time_taken_to_clear.csv")
+sum(is.na(df3)) / nrow(df3[complete.cases(df3),])
+```
+
+Since the number of missing rows are not that significant (only 5% of all rows are missing), we will just ignore these rows. However, we still need to analyze if there is a pattern between the data that is missing.
+
+#### Missing Analysis
+
+```{r}
+cases <- df3[ , c("district", "difference_hours")]
+grouped <- cases %>% group_by(district) %>% summarize(count=n())
+all_count <- grouped$count
+```
+
+```{r}
+df3notna <- df3[complete.cases(df3),]
+head(df3notna)
+```
+```{r}
+missingdf <- df3[!complete.cases(df3), c("district", "difference_hours")]
+missing <- missingdf %>% group_by(district) %>% summarize(count=n())
+missing_count <- missing$count
+district <- missing$district
+```
+
+```{r}
+percent_missing <- (missing_count / all_count)*100
+counts <- data.frame(district, missing_count, all_count, percent_missing)
+```
+
+We need to take into account the counts of the missing values for each district when we make the following barplot:
+
+```{r}
+ggplot(data = df3notna, mapping=aes(x = district, y = difference_hours) ) + geom_boxplot() + ylim(0, 1000)
+```
+
+The medians are all about the same. Although the bars for some districts are larger than others, this might be due to a lack of data. Districts like A, D, and E seem to have a small gap between the time the crime occurred and when the case was cleared while the time for 88, AP, C, and UK are relatively high. However, for these four districts, either a large percent of the data is missing or there isn't much data to start with -- therefore, the lengths of the bars may not be as accurate and may just be fluctuations.
+
+## Part 4: Incident count over time by district
+```{r}
+df4 = read.csv("crime_count_over_time.csv")
+df4
+```
+
+For this part, we will remove district 88 because it only has information on one year.
+
+```{r}
+df4 <- df4[-1, ]
+df4
+```
+
+```{r}
+ggplot(data = df4, mapping=aes(x = crime_year, y = number_crimes, color=district) ) + geom_line() 
+```
+
+Overall, there seems to be not much of a change in number of crimes over the three years (2014-2016). Most districts' lines have a slope of 0 indicating no change in number of crimes.
+
+
+
+
+
+
+
